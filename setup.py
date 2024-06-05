@@ -16,7 +16,7 @@ setup(name='dsa-110_scat-dev',
         "": ".",
         "scattering": "./scattering",
         "scintillation": "./scintillation",
-        }
+        },
       install_requires=[
           'numpy',
           'matplotlib',
