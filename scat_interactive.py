@@ -46,7 +46,7 @@ def lnlike(theta, x, y):
     return chisqr
 
 # Load data
-y_data = np.load("./tseries.npy")
+y_data = np.load("./tseries_test.npy")
 sampling_time, sampling_unit = 0.01024, "msec"
 x = np.arange(len(y_data)) * sampling_time
 
