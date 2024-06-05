@@ -12,6 +12,11 @@ setup(name='dsa-110_scat-dev',
       version='1.0.0',
       description='DSA-110 Scattering and Scintillation Utilities',
       packages=['scattering','scintillation'],
+      package_dir={
+        "": ".",
+        "scattering": "./scattering",
+        "scintillation": "./scintillation",
+        }
       install_requires=[
           'numpy',
           'matplotlib',
