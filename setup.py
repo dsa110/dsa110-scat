@@ -18,7 +18,7 @@ setup(name='dsa-110_scat-dev',
           'sigpyproc',
           'lmfit',
           'bilby',
-          'astropy'
+          'astropy',
           'scipy',
           'pandas',
           'tqdm'

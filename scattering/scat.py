@@ -189,7 +189,7 @@ def nested_sampling(npy_fil, p0, comp_num, nlive=500, bandwidth=400., center_fre
     freq_res = bandwidth / num_chan
     print('Raw Frequency Resolution (kHz):', freq_res * 1e3)
     window_left = int(peaks - 1 * widths)
-    window_right = int(peaks + 1 * widths
+    window_right = int(peaks + 1 * widths)
     
     if window_right - window_left <= 100:
         window_right += 20
