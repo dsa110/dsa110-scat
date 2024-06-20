@@ -1,5 +1,3 @@
-# Perform FRB burst profile fitting using nested sampling.
-
 import re
 import bilby
 import csv
@@ -24,31 +22,10 @@ font = {'family': 'serif', 'weight': 'normal', 'size': 14}
 plt.rc('font', **font)
 
 def boxcar_kernel(width):
-    """
-    Returns the boxcar kernel of given width normalized by sqrt(width) for S/N reasons.
-
-    Parameters:
-    width (int): Width of the boxcar.
-
-    Returns:
-    array: Boxcar of width `width` normalized by sqrt(width).
-    """
     width = int(round(width, 0))
     return np.ones(width, dtype="float32") / np.sqrt(width)
 
 def find_burst(ts, width_factor=4, min_width=1, max_width=2048):
-    """
-    Find burst peak and width using boxcar convolution.
-
-    Parameters:
-    ts (array): Time-series.
-    width_factor (int, optional): Windowing factor for on and off-pulse determination.
-    min_width (int, optional): Minimum width to search from, in number of time samples.
-    max_width (int, optional): Maximum width to search up to, in number of time samples.
-
-    Returns:
-    tuple: (peak, width, snr) where peak is the index of the burst peak, width is the width of the burst, and snr is the signal-to-noise ratio.
-    """
     min_width = int(min_width)
     max_width = int(max_width)
     widths = list(range(min_width, min(max_width + 1, int((len(ts) - 50) // 6))))
@@ -75,49 +52,14 @@ def find_burst(ts, width_factor=4, min_width=1, max_width=2048):
     return peaks[best_idx] - widths[best_idx] // 2, widths[best_idx], snrs[best_idx]
 
 def Gaussian1D(x, sig, x0):
-    """
-    Returns 1D Gaussian curve.
-
-    Parameters:
-    x (array): Input data points.
-    sig (float): Standard deviation of the Gaussian.
-    x0 (float): Mean of the Gaussian.
-
-    Returns:
-    array: Gaussian curve.
-    """
     return np.exp(-(x - x0) * (x - x0) / (2 * sig * sig + MIN_FLOAT))
 
 def exp_decay(x, tau, x0):
-    """
-    Returns 1D one-sided exponential curve.
-
-    Parameters:
-    x (array): Input data points.
-    tau (float): Decay constant.
-    x0 (float): Starting point of the exponential decay.
-
-    Returns:
-    array: One-sided exponential curve.
-    """
     res = np.zeros(len(x)) + MIN_FLOAT
     res[x > x0] = np.exp(-(x[x > x0] - x0) / (tau + MIN_FLOAT))
     return res
 
 def exp_gauss(x, x0, amp, sig, tau):
-    """
-    Returns Gaussian convolved with a one-sided exponential.
-
-    Parameters:
-    x (array): Input data points.
-    x0 (float): Mean of the Gaussian.
-    amp (float): Amplitude of the Gaussian.
-    sig (float): Standard deviation of the Gaussian.
-    tau (float): Decay constant of the exponential.
-
-    Returns:
-    array: Convolution of Gaussian and one-sided exponential.
-    """
     gx0 = np.mean(x)
     g = Gaussian1D(x, sig, gx0)
     ex = exp_decay(x, tau, x0)
@@ -125,62 +67,21 @@ def exp_gauss(x, x0, amp, sig, tau):
     conv /= np.max(conv) + MIN_FLOAT
     return amp * conv
 
-def exp_gauss_1(x, x1, amp1, sig1, tau1):
-    return exp_gauss(x, x1, amp1, sig1, tau1)
-
-def exp_gauss_2(x, x1, amp1, sig1, tau1, x2, amp2, sig2, tau2):
-    g1 = exp_gauss(x, x1, amp1, sig1, tau1)
-    g2 = exp_gauss(x, x2, amp2, sig2, tau2)
-    return g1 + g2
-
-def exp_gauss_3(x, x1, amp1, sig1, tau1, x2, amp2, sig2, tau2, x3, amp3, sig3, tau3):
-    g1 = exp_gauss(x, x1, amp1, sig1, tau1)
-    g2 = exp_gauss(x, x2, amp2, sig2, tau2)
-    g3 = exp_gauss(x, x3, amp3, sig3, tau3)
-    return g1 + g2 + g3
-
-def exp_gauss_4(x, x1, amp1, sig1, tau1, x2, amp2, sig2, tau2, x3, amp3, sig3, tau3, x4, amp4, sig4, tau4):
-    g1 = exp_gauss(x, x1, amp1, sig1, tau1)
-    g2 = exp_gauss(x, x2, amp2, sig2, tau2)
-    g3 = exp_gauss(x, x3, amp3, sig3, tau3)
-    g4 = exp_gauss(x, x4, amp4, sig4, tau4)
-    return g1 + g2 + g3 + g4
+def exp_gauss_n(x, *params):
+    y = np.zeros_like(x)
+    n = len(params) // 4
+    for i in range(n):
+        x0, amp, sig, tau = params[4*i:4*(i+1)]
+        y += exp_gauss(x, x0, amp, sig, tau)
+    return y
 
 def sub_npy(npy_fil, freq_subfactor=1, time_subfactor=1, bandwidth=400., center_frequency=800., file_duration=83.33):
-    """
-    Returns original numpy array, a sub-banded numpy array scrunched by a subfactor, and the array timeseries.
-
-    Parameters:
-    npy_fil (str): Path to the .npy file.
-    freq_subfactor (int, optional): Frequency subfactor.
-    time_subfactor (int, optional): Time subfactor.
-    bandwidth (float, optional): Bandwidth in MHz.
-    center_frequency (float, optional): Center frequency in MHz.
-    file_duration (float, optional): Duration of the file in seconds.
-
-    Returns:
-    tuple: (original numpy array, sub-banded numpy array, array timeseries)
-    """
     npy = np.load(npy_fil)
     npy_fsub = np.flipud(np.nanmean(npy.reshape(-1, int(freq_subfactor), int(npy.shape[1])), axis=1))
     timeseries = npy_fsub.sum(0)
     return npy, npy_fsub, timeseries
 
 def nested_sampling(npy_fil, p0, comp_num, nlive=500, bandwidth=400., center_frequency=800., file_duration=83.33, subfactor=1., debug=False):
-    """
-    Perform nested sampling profile fitting with bilby.
-
-    Parameters:
-    npy_fil (str): Path to the .npy file.
-    p0 (list): Initial parameter values.
-    comp_num (int): Number of components in the model.
-    nlive (int, optional): Number of live points for nested sampling.
-    bandwidth (float, optional): Bandwidth in MHz.
-    center_frequency (float, optional): Center frequency in MHz.
-    file_duration (float, optional): Duration of the file in seconds.
-    subfactor (float, optional): Subfactor for downsampling.
-    debug (bool, optional): If True, displays a debug plot.
-    """
     npy, npy_sub, timeseries = sub_npy(npy_fil, subfactor, file_duration, bandwidth, center_frequency)
     peaks, widths, snrs = find_burst(timeseries)
     time_res = file_duration / npy.shape[1]
@@ -214,134 +115,40 @@ def nested_sampling(npy_fil, p0, comp_num, nlive=500, bandwidth=400., center_fre
     label = str(npy_fil.split('/')[-1].split('_3')[0])
     outdir = str(npy_fil.split('/')[-1].split('_3')[0]) + '_profilefit'
 
-    if comp_num == '1':
-        lower_bounds = [(i - i / 2) for i in p0[0:4]]
-        upper_bounds = [(i + i / 2) for i in p0[0:4]]
-        lower_bounds = [round(i, 2) for i in lower_bounds]
-        upper_bounds = [round(i, 2) + 1. for i in upper_bounds]
+    lower_bounds = [(i - i / 2) for i in p0]
+    upper_bounds = [(i + i / 2) for i in p0]
+    lower_bounds = [round(i, 2) for i in lower_bounds]
+    upper_bounds = [round(i, 2) + 1. for i in upper_bounds]
 
-        print('Lower:', lower_bounds)
-        print('Upper:', upper_bounds)
+    print('Lower:', lower_bounds)
+    print('Upper:', upper_bounds)
 
-        likeli = bilby.core.likelihood.GaussianLikelihood(time, y_data, exp_gauss_1, sigma=sigma)
-        prior = dict(x1=bilby.core.prior.Uniform(lower_bounds[0], upper_bounds[0], 'x1'),
-                     amp1=bilby.core.prior.Uniform(lower_bounds[1], upper_bounds[1], 'amp1'),
-                     sig1=bilby.core.prior.Uniform(lower_bounds[2], upper_bounds[2], 'sig1'),
-                     tau1=bilby.core.prior.Uniform(lower_bounds[3], upper_bounds[3], 'tau1'))
-        injection_params = dict(x1=p0[0], amp1=p0[1], sig1=p0[2], tau1=p0[3])
-        print('Sampler Running')
+    likeli = bilby.core.likelihood.GaussianLikelihood(time, y_data, exp_gauss_n, sigma=sigma)
+    prior = {}
+    injection_params = {}
+    for i in range(comp_num):
+        prior[f'x{i+1}'] = bilby.core.prior.Uniform(lower_bounds[4*i], upper_bounds[4*i], f'x{i+1}')
+        prior[f'amp{i+1}'] = bilby.core.prior.Uniform(lower_bounds[4*i+1], upper_bounds[4*i+1], f'amp{i+1}')
+        prior[f'sig{i+1}'] = bilby.core.prior.Uniform(lower_bounds[4*i+2], upper_bounds[4*i+2], f'sig{i+1}')
+        prior[f'tau{i+1}'] = bilby.core.prior.Uniform(lower_bounds[4*i+3], upper_bounds[4*i+3], f'tau{i+1}')
+        injection_params[f'x{i+1}'] = p0[4*i]
+        injection_params[f'amp{i+1}'] = p0[4*i+1]
+        injection_params[f'sig{i+1}'] = p0[4*i+2]
+        injection_params[f'tau{i+1}'] = p0[4*i+3]
 
-        result = bilby.run_sampler(likelihood=likeli, priors=prior, injection_parameters=injection_params,
-                                   sampler='dynesty', nlive=500, outdir=outdir, label=label)
-        result.plot_corner()
-        print('Fit Complete!')
+    print('Sampler Running')
 
-    elif comp_num == '2':
-        lower_bounds = [(i - i / 2) for i in p0[0:8]]
-        upper_bounds = [(i + i / 2) for i in p0[0:8]]
-        lower_bounds = [round(i, 2) for i in lower_bounds]
-        upper_bounds = [round(i, 2) + 1. for i in upper_bounds]
-
-        print('Lower:', lower_bounds)
-        print('Upper:', upper_bounds)
-
-        likeli = bilby.core.likelihood.GaussianLikelihood(time, y_data, exp_gauss_2, sigma=sigma)
-        prior = dict(x1=bilby.core.prior.Uniform(lower_bounds[0], upper_bounds[0], 'x1'),
-                     amp1=bilby.core.prior.Uniform(lower_bounds[1], upper_bounds[1], 'amp1'),
-                     sig1=bilby.core.prior.Uniform(lower_bounds[2], upper_bounds[2], 'sig1'),
-                     tau1=bilby.core.prior.Uniform(lower_bounds[3], upper_bounds[3], 'tau1'),
-                     x2=bilby.core.prior.Uniform(lower_bounds[4], upper_bounds[4], 'x2'),
-                     amp2=bilby.core.prior.Uniform(lower_bounds[5], upper_bounds[5], 'amp2'),
-                     sig2=bilby.core.prior.Uniform(lower_bounds[6], upper_bounds[6], 'sig2'),
-                     tau2=bilby.core.prior.Uniform(lower_bounds[7], upper_bounds[7], 'tau2'))
-        injection_params = dict(x1=p0[0], amp1=p0[1], sig1=p0[2], tau1=p0[3],
-                                x2=p0[4], amp2=p0[5], sig2=p0[6], tau2=p0[7])
-        print('Sampler Running')
-
-        result = bilby.run_sampler(likelihood=likeli, priors=prior, injection_parameters=injection_params,
-                                   sampler='dynesty', nlive=500, outdir=outdir, label=label)
-        result.plot_corner()
-        print('Fit Complete!')
-
-    elif comp_num == '3':
-        lower_bounds = [(i - i / 2) for i in p0[0:12]]
-        upper_bounds = [(i + i / 2) for i in p0[0:12]]
-        lower_bounds = [round(i, 2) for i in lower_bounds]
-        upper_bounds = [round(i, 2) + 1. for i in upper_bounds]
-
-        print('Lower:', lower_bounds)
-        print('Upper:', upper_bounds)
-
-        likeli = bilby.core.likelihood.GaussianLikelihood(time, y_data, exp_gauss_3, sigma=sigma)
-        prior = dict(x1=bilby.core.prior.Uniform(lower_bounds[0], upper_bounds[0], 'x1'),
-                     amp1=bilby.core.prior.Uniform(lower_bounds[1], upper_bounds[1], 'amp1'),
-                     sig1=bilby.core.prior.Uniform(lower_bounds[2], upper_bounds[2], 'sig1'),
-                     tau1=bilby.core.prior.Uniform(lower_bounds[3], upper_bounds[3], 'tau1'),
-                     x2=bilby.core.prior.Uniform(lower_bounds[4], upper_bounds[4], 'x2'),
-                     amp2=bilby.core.prior.Uniform(lower_bounds[5], upper_bounds[5], 'amp2'),
-                     sig2=bilby.core.prior.Uniform(lower_bounds[6], upper_bounds[6], 'sig2'),
-                     tau2=bilby.core.prior.Uniform(lower_bounds[7], upper_bounds[7], 'tau2'),
-                     x3=bilby.core.prior.Uniform(lower_bounds[8], upper_bounds[8], 'x3'),
-                     amp3=bilby.core.prior.Uniform(lower_bounds[9], upper_bounds[9], 'amp3'),
-                     sig3=bilby.core.prior.Uniform(lower_bounds[10], upper_bounds[10], 'sig3'),
-                     tau3=bilby.core.prior.Uniform(lower_bounds[11], upper_bounds[11], 'tau3'))
-        injection_params = dict(x1=p0[0], amp1=p0[1], sig1=p0[2], tau1=p0[3],
-                                x2=p0[4], amp2=p0[5], sig2=p0[6], tau2=p0[7],
-                                x3=p0[8], amp3=p0[9], sig3=p0[10], tau3=p0[11])
-        print('Sampler Running')
-
-        result = bilby.run_sampler(likelihood=likeli, priors=prior, injection_parameters=injection_params,
-                                   sampler='dynesty', nlive=500, outdir=outdir, label=label)
-        result.plot_corner()
-        print('Fit Complete!')
-
-    elif comp_num == '4':
-        lower_bounds = [(i - i / 2) for i in p0[0:16]]
-        upper_bounds = [(i + i / 2) for i in p0[0:16]]
-        lower_bounds = [round(i, 2) for i in lower_bounds]
-        upper_bounds = [round(i, 2) + 1. for i in upper_bounds]
-
-        print('Lower:', lower_bounds)
-        print('Upper:', upper_bounds)
-
-        likeli = bilby.core.likelihood.GaussianLikelihood(time, y_data, exp_gauss_4, sigma=sigma)
-        prior = dict(x1=bilby.core.prior.Uniform(lower_bounds[0], upper_bounds[0], 'x1'),
-                     amp1=bilby.core.prior.Uniform(lower_bounds[1], upper_bounds[1], 'amp1'),
-                     sig1=bilby.core.prior.Uniform(lower_bounds[2], upper_bounds[2], 'sig1'),
-                     tau1=bilby.core.prior.Uniform(lower_bounds[3], upper_bounds[3], 'tau1'),
-                     x2=bilby.core.prior.Uniform(lower_bounds[4], upper_bounds[4], 'x2'),
-                     amp2=bilby.core.prior.Uniform(lower_bounds[5], upper_bounds[5], 'amp2'),
-                     sig2=bilby.core.prior.Uniform(lower_bounds[6], upper_bounds[6], 'sig2'),
-                     tau2=bilby.core.prior.Uniform(lower_bounds[7], upper_bounds[7], 'tau2'),
-                     x3=bilby.core.prior.Uniform(lower_bounds[8], upper_bounds[8], 'x3'),
-                     amp3=bilby.core.prior.Uniform(lower_bounds[9], upper_bounds[9], 'amp3'),
-                     sig3=bilby.core.prior.Uniform(lower_bounds[10], upper_bounds[10], 'sig3'),
-                     tau3=bilby.core.prior.Uniform(lower_bounds[11], upper_bounds[11], 'tau3'),
-                     x4=bilby.core.prior.Uniform(lower_bounds[12], upper_bounds[12], 'x4'),
-                     amp4=bilby.core.prior.Uniform(lower_bounds[13], upper_bounds[13], 'amp4'),
-                     sig4=bilby.core.prior.Uniform(lower_bounds[14], upper_bounds[14], 'sig4'),
-                     tau4=bilby.core.prior.Uniform(lower_bounds[15], upper_bounds[15], 'tau4'))
-        injection_params = dict(x1=p0[0], amp1=p0[1], sig1=p0[2], tau1=p0[3],
-                                x2=p0[4], amp2=p0[5], sig2=p0[6], tau2=p0[7],
-                                x3=p0[8], amp3=p0[9], sig3=p0[10], tau3=p0[11],
-                                x4=p0[12], amp4=p0[13], sig4=p0[14], tau4=p0[15])
-        print('Sampler Running')
-
-        result = bilby.run_sampler(likelihood=likeli, priors=prior, injection_parameters=injection_params,
-                                   sampler='dynesty', nlive=500, outdir=outdir, label=label)
-        result.plot_corner()
-        print('Fit Complete!')
-
-    else:
-        print('No Burst Component Number Specified -- Please Identify and Define Number of Sub-Bursts')
-
+    result = bilby.run_sampler(likelihood=likeli, priors=prior, injection_parameters=injection_params,
+                               sampler='dynesty', nlive=500, outdir=outdir, label=label)
+    result.plot_corner()
+    print('Fit Complete!')
     print('Injection Parameters:', injection_params)
 
 #if __name__ == '__main__':
 #    npy_fil = sys.argv[1]
 #    injection_csv = sys.argv[2]
-#    comp_num = sys.argv[3]
-#    file_dur = sys.argv[4]
+#    comp_num = int(sys.argv[3])
+#    file_dur = float(sys.argv[4])
 
 #    cwd = os.getcwd()
 #    npy_file = str(cwd) + '/' + str(npy_fil)
@@ -356,4 +163,4 @@ def nested_sampling(npy_fil, p0, comp_num, nlive=500, bandwidth=400., center_fre
 #    print('P0:', p0)
 #    print('P0 Shape:', len(p0))
 
-#    nested_sampling(npy_file, list(p0), str(comp_num), file_duration=float(file_dur))
+#    nested_sampling(npy_file, list(p0), comp_num, file_duration=file_dur)
