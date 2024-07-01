@@ -75,33 +75,11 @@ def exp_gauss_n(x, *params):
         y += exp_gauss(x, x0, amp, sig, tau)
     return y
 
-def sub_npy(npy_fil, freq_subfactor=1, time_subfactor=1, bandwidth=400., center_frequency=800., file_duration=83.33):
-    npy = np.load(npy_fil)
-    npy_fsub = np.flipud(np.nanmean(npy.reshape(-1, int(freq_subfactor), int(npy.shape[1])), axis=1))
-    timeseries = npy_fsub.sum(0)
-    return npy, npy_fsub, timeseries
+def nested_sampling(timeseries, p0, comp_num, time_resolution, nlive=500, debug=False):
 
-def nested_sampling(npy_fil, p0, comp_num, nlive=500, bandwidth=400., center_frequency=800., file_duration=83.33, subfactor=1., debug=False):
-    npy, npy_sub, timeseries = sub_npy(npy_fil, subfactor, file_duration, bandwidth, center_frequency)
-    peaks, widths, snrs = find_burst(timeseries)
-    time_res = file_duration / npy.shape[1]
-    print('Raw Time Resolution (microsec):', time_res * 1e3)
-    num_chan = npy.shape[0]
-    freq_res = bandwidth / num_chan
-    print('Raw Frequency Resolution (kHz):', freq_res * 1e3)
-    window_left = int(peaks - 1 * widths)
-    window_right = int(peaks + 1 * widths)
-    
-    if window_right - window_left <= 100:
-        window_right += 20
-        window_left -= 20
-
-    sub_factor_time = 1
-    y_data = (npy[:].sum(0) / np.max(npy[:].sum(0)))[window_left:window_right]
-    sampling_time = (file_duration / npy.shape[1]) * sub_factor_time
-    print('Sampling Time (ms):', sampling_time)
-    time = np.arange(len(y_data)) * sampling_time
-    sigma = np.repeat(sampling_time, len(time))
+    print('Time Resolution (ms):', time_resolution)
+    time = np.arange(len(timeseries)) * time_resolution
+    sigma = np.repeat(time_resolution, len(time))
     print('Time:', time)
     print('Sigma:', sigma)
 
@@ -115,8 +93,8 @@ def nested_sampling(npy_fil, p0, comp_num, nlive=500, bandwidth=400., center_fre
     label = str(npy_fil.split('/')[-1].split('_3')[0])
     outdir = str(npy_fil.split('/')[-1].split('_3')[0]) + '_profilefit'
 
-    lower_bounds = [(i - i / 2) for i in p0]
-    upper_bounds = [(i + i / 2) for i in p0]
+    lower_bounds = [(i - i / 2) for i in p0] #this can be modified
+    upper_bounds = [(i + i / 2) for i in p0] #this can be modified
     lower_bounds = [round(i, 2) for i in lower_bounds]
     upper_bounds = [round(i, 2) + 1. for i in upper_bounds]
 
