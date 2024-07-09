@@ -77,6 +77,16 @@ def exp_gauss_n(x, *params):
         y += exp_gauss(x, x0, amp, sig, tau)
     return y
 
+from scipy.special import erf
+def exp_gauss_n_direct(x, *params):
+    y = np.zeros_like(x)
+    n = len(params) // 4
+    for i in range(n):
+         x0, amp, sig, tau = params[4*i:4*(i+1)]
+         p = np.exp((1/(tau + MIN_FLOAT)/2)*(2*x0 + (sig**2)/(tau + MIN_FLOAT) - 2*x))*(1 - erf( (x0 + (sig**2)/(tau + MIN_FLOAT) - x)/(sig + MIN_FLOAT)/np.sqrt(2)))
+         y += amp*p/np.max(p)
+    return y
+
 def nested_sampling(timeseries, p0, comp_num, time_resolution, outdir, label, nlive=500, debug=False, time=None,plot=False, verbose=False, lower_bounds=None, upper_bounds=None,clean=True,sigma=None,resume=False):
 
     if verbose:

@@ -1,0 +1,9 @@
+numpy
+matplotlib
+sigpyproc
+lmfit
+bilby
+astropy
+scipy
+pandas
+tqdm

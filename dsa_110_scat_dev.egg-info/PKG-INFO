@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: dsa-110_scat-dev
+Version: 1.0.0
+Summary: DSA-110 Scattering and Scintillation Utilities
+Requires-Dist: numpy
+Requires-Dist: matplotlib
+Requires-Dist: sigpyproc
+Requires-Dist: lmfit
+Requires-Dist: bilby
+Requires-Dist: astropy
+Requires-Dist: scipy
+Requires-Dist: pandas
+Requires-Dist: tqdm
