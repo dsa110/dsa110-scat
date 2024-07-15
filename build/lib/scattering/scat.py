@@ -62,10 +62,13 @@ def exp_decay(x, tau, x0):
     return res
 
 def exp_gauss(x, x0, amp, sig, tau):
-    gx0 = np.mean(x)
-    g = Gaussian1D(x, sig, gx0)
-    ex = exp_decay(x, tau, x0)
-    conv = convolve(g, ex, "same")
+    if np.abs(tau) >= 2.41e-5:
+        gx0 = np.mean(x)
+        g = Gaussian1D(x, sig, gx0)
+        ex = exp_decay(x, tau, x0)
+        conv = convolve(g, ex, "same")
+    else: 
+        conv = Gaussian1D(x, sig, x0)
     conv /= np.max(conv) + MIN_FLOAT
     return amp * conv
 
@@ -77,17 +80,7 @@ def exp_gauss_n(x, *params):
         y += exp_gauss(x, x0, amp, sig, tau)
     return y
 
-from scipy.special import erf
-def exp_gauss_n_direct(x, *params):
-    y = np.zeros_like(x)
-    n = len(params) // 4
-    for i in range(n):
-         x0, amp, sig, tau = params[4*i:4*(i+1)]
-         p = np.exp((1/(tau + MIN_FLOAT)/2)*(2*x0 + (sig**2)/(tau + MIN_FLOAT) - 2*x))*(1 - erf( (x0 + (sig**2)/(tau + MIN_FLOAT) - x)/(sig + MIN_FLOAT)/np.sqrt(2)))
-         y += amp*p/np.max(p)
-    return y
-
-def nested_sampling(timeseries, p0, comp_num, time_resolution, outdir, label, nlive=500, debug=False, time=None,plot=False, verbose=False, lower_bounds=None, upper_bounds=None,clean=True,sigma=None,resume=False):
+def nested_sampling(timeseries, p0, comp_num, time_resolution, outdir, label, nlive=500, debug=False, time=None,plot=False, verbose=False, lower_bounds=None, upper_bounds=None,clean=True,sigma=None,resume=False,dlogz=0.1):
 
     if verbose:
         print('Time Resolution (ms):', time_resolution)
@@ -137,7 +130,7 @@ def nested_sampling(timeseries, p0, comp_num, time_resolution, outdir, label, nl
         fig = plt.figure(figsize=(18,12))
     result = bilby.run_sampler(likelihood=likeli, priors=prior, injection_parameters=injection_params,
                                sampler='dynesty', nlive=nlive, outdir=outdir, label=label, clean=clean,
-                               print_progress=False,resume=resume)
+                               print_progress=False,resume=resume,dlogz=dlogz)
     if plot:
         result.plot_corner(fig=fig)
     if verbose:
