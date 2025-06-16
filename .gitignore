@@ -1,0 +1,17 @@
+# Ignore image files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.tif
+*.tiff
+*.bmp
+*.svg
+*.webp
+
+# Ignore NumPy array files
+*.npy
+*.npz
+
+# Ignore .fil files
+*.fil
