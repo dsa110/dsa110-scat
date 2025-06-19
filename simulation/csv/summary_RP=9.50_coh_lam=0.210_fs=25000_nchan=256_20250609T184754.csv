@@ -1,0 +1,2 @@
+m2,nu_s_mw,nu_s_host,err_m2,err_nu_s_mw,err_nu_s_host,burst,RP_nominal,RP_effective,wavelength_m,fs_Hz,nchan,mode,anisotropic_host,theta_L_mw,theta_L_host_x,theta_L_host_y
+1.0031747503882933,30.344666262024443,23.50902265818981,,,,0,9.5,1.4285928574642907e+20,0.21,25000.0,256,coh,False,5e-06,,
