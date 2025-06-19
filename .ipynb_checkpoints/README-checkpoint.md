@@ -1,15 +1,13 @@
-# FRB Intensity Analysis Pipeline for the DSA-110
+# FLITS | FRB Intensity Analysis Pipeline
 
-## Pulse-broadening
-
-A lightweight, modular, telescope-agnostic toolkit for fitting pulse-broadening and scintillation in Fast Radio Burst (FRB) dynamic spectra, and instrumental effects. 
+**F**itting **L**ikelihoods **I**n **T**ime-Frequency **S**pectra: A lightweight, modular, telescope-agnostic toolkit for fitting pulse-broadening and scintillation in Fast Radio Burst (FRB) dynamic spectra, and instrumental effects. 
 
 ---
 
 ## Directory layout
 
 ```
-scattering/
+FLITS
 ├── burstfit_pipeline.py        # OO pipeline orchestrator
 ├── burstfit.py                 # core physics + MCMC wrappers
 ├── burstfit_utils.py           # helper functions MCMC fit
@@ -35,7 +33,6 @@ file  ───────▶ │ pre‑processing   │──┐
                │  (modelselect)   │──▶ best model key
                └──────────────────┘
 ```
-
 * **pre‑processing** — band‑pass correct, trim, down‑sample, normalise.
 * **model scan** — runs MCMC for M0…M3, picks the winner by BIC.
 * **diagnostics** — optional robustness checks before publication.
