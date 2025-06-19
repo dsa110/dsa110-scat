@@ -66,7 +66,8 @@ def main():
         plotting.plot_analysis_overview(
             scint_pipeline.final_results, 
             scint_pipeline.acf_results, 
-            scint_pipeline.all_subband_fits
+            scint_pipeline.all_subband_fits,
+            scint_pipeline.powlaw_params
         )
     else:
         logging.warning("Intermediate results not available, skipping overview plot.")

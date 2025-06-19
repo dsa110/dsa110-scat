@@ -20,6 +20,7 @@ class ScintillationAnalysis:
         self.acf_results = None
         self.all_subband_fits = None 
         self.final_results = None  
+        self.powlaw_params = None
         
         self.cache_dir = config.get('pipeline_options', {}).get('cache_directory', './cache')
         if config.get('pipeline_options', {}).get('save_intermediate_steps'):
@@ -72,7 +73,7 @@ class ScintillationAnalysis:
             return
 
         log.info("Fitting models and deriving final scintillation parameters...")
-        self.final_results, self.all_subband_fits = analysis.analyze_scintillation_from_acfs(
+        self.final_results, self.all_subband_fits, self.powlaw_params = analysis.analyze_scintillation_from_acfs(
             self.acf_results, self.config
         )
         

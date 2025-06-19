@@ -103,8 +103,40 @@ def calculate_acfs_for_subbands(masked_spectrum, config):
 
     # Prepare off-burst spectrum for normalization
     burst_lims = masked_spectrum.find_burst_envelope(thres=rfi_config.get('find_burst_thres', 5))
-    off_burst_end = burst_lims[0] - rfi_config.get('off_burst_buffer', 100)
-    off_burst_spec = masked_spectrum.get_spectrum((0, off_burst_end))
+    
+    fig = plt.figure()
+    plt.plot(masked_spectrum.get_profile((burst_lims[0], burst_lims[1])))
+    plt.title('On Burst Timeseries')
+    plt.show()
+    
+    # Symmetric noise window
+    if rfi_config.get('use_symmetric_noise_window', False):
+        on_burst_duration = burst_lims[1] - burst_lims[0]
+        off_burst_end = burst_lims[0]
+        off_burst_start = off_burst_end - on_burst_duration
+        log.info(f"Using symmetric noise window of duration {on_burst_duration} bins.")
+    else:
+        # Original logic using a fixed buffer
+        off_burst_end = burst_lims[0] - rfi_config.get('off_burst_buffer', 100)
+        off_burst_start = 0
+        
+    # Ensure the window is valid
+    if off_burst_start < 0:
+        log.warning(f"Calculated noise window start is before data start. Clipping to 0.")
+        off_burst_start = 0
+    
+    off_burst_spec = masked_spectrum.get_spectrum((off_burst_start, off_burst_end))
+             
+    fig = plt.figure()
+    plt.plot(masked_spectrum.get_spectrum((burst_lims[0], burst_lims[1])))
+    plt.title('On Burst Spectrum')
+    plt.show()
+              
+    fig = plt.figure()
+    plt.plot(off_burst_spec)
+    plt.title('Off Burst Spectrum')
+    plt.show()
+
 
     results = {
         'subband_acfs': [], 'subband_lags_mhz': [], 
@@ -146,7 +178,7 @@ def calculate_acfs_for_subbands(masked_spectrum, config):
         if current_max_lag is None or current_max_lag > sub_bandwidth:
             current_max_lag = sub_bandwidth
             
-        max_lag_bins_sub = int(max_lag_mhz / channel_width)
+        max_lag_bins_sub = int(current_max_lag / channel_width)
         
         acf_obj = calculate_acf(
             sub_spectrum, 
@@ -219,43 +251,41 @@ def analyze_scintillation_from_acfs(acf_results, config):
         dict: A dictionary containing the final derived scintillation parameters.
     """
     fit_config = config.get('analysis', {}).get('fitting', {})
-    fit_lagrange_mhz = fit_config.get('fit_lagrange_mhz', 45.0)
-    ref_freq = fit_config.get('reference_frequency_mhz', 1400.0)
-    
-    # 1. Fit both 1- and 2-component models to every sub-band ACF
+    fit_lagrange_mhz = fit_config.get('fit_lagrange_mhz', 0.5)
+    ref_freq = fit_config.get('reference_frequency_mhz', 600.0)
+    show_subband_plots = fit_config.get('show_subband_fit_plots', False)
+
     log.info("Fitting Lorentzian models to all sub-band ACFs...")
-    
-    all_fits = [_fit_lorentzian_models_to_acf(ACF(acf, lags), fit_lagrange_mhz) for acf, lags in 
-                zip(acf_results['subband_acfs'], acf_results['subband_lags_mhz'])]
-    
-    #all_fits = []
-    #for i, (acf_data, lags) in enumerate(zip(acf_results['subband_acfs'], acf_results['subband_lags_mhz'])):
-    #    fit_result = _fit_lorentzian_models_to_acf(ACF(acf_data, lags), fit_lagrange_mhz)
-    #    all_fits.append(fit_result)
+    all_fits = []
+    for i, (acf_data, lags) in enumerate(zip(acf_results['subband_acfs'], acf_results['subband_lags_mhz'])):
+        sub_bandwidth = (acf_results['subband_num_channels'][i] * acf_results['subband_channel_widths_mhz'][i])
+        current_fit_lagrange = min(fit_lagrange_mhz, sub_bandwidth / 2.0)
+        
+        fit_result = _fit_lorentzian_models_to_acf(ACF(acf_data, lags), current_fit_lagrange)
+        all_fits.append(fit_result)
 
-    #    center_freq = acf_results['subband_center_freqs_mhz'][i]
-    #    plt.figure(figsize=(10, 6))
-    #    plt.plot(lags, acf_data, 'k.', markersize=4, label='ACF Data')
-    #    fit1 = fit_result.get('fit_1_comp')
-    #    if fit1 and fit1.success:
-    #        plt.plot(lags, fit1.eval(x=lags), 'b--', alpha=0.8, label=f'1-Comp Fit (BIC: {fit1.bic:.1f})')
-    #    fit2 = fit_result.get('fit_2_comp')
-    #    if fit2 and fit2.success:
-    #        plt.plot(lags, fit2.eval(x=lags), 'r-', alpha=0.7, label=f'2-Comp Fit (BIC: {fit2.bic:.1f})')
+        if show_subband_plots:
+            center_freq = acf_results['subband_center_freqs_mhz'][i]
+            plt.figure(figsize=(10, 6))
+            plt.plot(lags, acf_data, 'k.', markersize=4, label='ACF Data')
+            fit1 = fit_result.get('fit_1_comp')
+            if fit1 and fit1.success:
+                plt.plot(lags, fit1.eval(x=lags), 'b--', alpha=0.8, label=f'1-Comp Fit (BIC: {fit1.bic:.1f})')
+            fit2 = fit_result.get('fit_2_comp')
+            if fit2 and fit2.success:
+                plt.plot(lags, fit2.eval(x=lags), 'r-', alpha=0.7, label=f'2-Comp Fit (BIC: {fit2.bic:.1f})')
+            
+            plt.title(f'Diagnostic Fit for Sub-band @ {center_freq:.1f} MHz')
+            plt.xlabel('Frequency Lag (MHz)')
+            plt.ylabel('Autocorrelation')
+            plt.xlim(-current_fit_lagrange, current_fit_lagrange)
+            plt.legend()
+            plt.grid(True, linestyle=':', alpha=0.6)
+            plt.show()
 
-    #    plt.title(f'Diagnostic Fit for Sub-band @ {center_freq:.1f} MHz')
-    #    plt.xlabel('Frequency Lag (MHz)')
-    #    plt.ylabel('Autocorrelation')
-    #    plt.xlim(-fit_lagrange_mhz, fit_lagrange_mhz)
-    #    plt.legend()
-    #    plt.grid(True, linestyle=':', alpha=0.6)
-    #    plt.show()
-
-    # 2. Select the best overall model using BIC comparison
     best_model = _select_overall_best_model(all_fits)
     log.info(f"Model selection complete. Best overall model: {best_model} component(s).")
     
-    # 3. Extract physical parameters based on the best model choice
     params_per_comp = [[] for _ in range(best_model)]
     
     for i, fits in enumerate(all_fits):
@@ -267,20 +297,22 @@ def analyze_scintillation_from_acfs(acf_results, config):
         p = fit_obj.params
         sub_bw = acf_results['subband_num_channels'][i] * acf_results['subband_channel_widths_mhz'][i]
 
+        def get_err(param):
+            return float(param.stderr) if param.stderr is not None else np.nan
+
         if best_model == 1:
             bw = p['gamma1'].value
-            # Calculate finite-scintle error
-            num_scintles = max(1, sub_bw / bw)
+            num_scintles = max(1, sub_bw / bw) if bw > 0 else 1
             finite_err = bw / (2 * np.sqrt(num_scintles))
-            params_per_comp[0].append({'bw': bw, 'mod': p['m1'].value, 
-                                       'bw_err': p['gamma1'].stderr, 'finite_err': finite_err})
+            params_per_comp[0].append({'bw': bw, 'mod': p['m1'].value, 'bw_err': get_err(p['gamma1']), 'finite_err': finite_err})
         else:
-            components = sorted([(p[f'gamma{j}'].value, p[f'm{j}'].value, p[f'gamma{j}'].stderr) for j in [1, 2]])
+            components = sorted([(p[f'gamma{j}'].value, p[f'm{j}'].value, get_err(p[f'gamma{j}'])) for j in [1, 2]])
             for comp_idx, (bw, mod, err) in enumerate(components):
-                num_scintles = max(1, sub_bw / bw)
+                num_scintles = max(1, sub_bw / bw) if bw > 0 else 1
                 finite_err = bw / (2 * np.sqrt(num_scintles))
                 params_per_comp[comp_idx].append({'bw': bw, 'mod': mod, 'bw_err': err, 'finite_err': finite_err})
 
+    final_results = {'best_model_choice': best_model, 'components': {}}
     # 4. Perform Power-Law fitting for each component
     final_results = {'best_model': best_model, 'components': {}}
     
@@ -289,38 +321,104 @@ def analyze_scintillation_from_acfs(acf_results, config):
         freqs = np.array(acf_results['subband_center_freqs_mhz'])
         bws = np.array([p.get('bw') for p in params_list])
         
-        fit_errs = np.array([p.get('bw_err', np.nan) for p in params_list])
-        finite_errs = np.array([p.get('finite_err', np.nan) for p in params_list])
-
+        # *** ROBUSTNESS FIX: Build fitting arrays from the parameter list ***
+        # This ensures that only data from successful fits are included.
+        freqs_for_fit = np.array([acf_results['subband_center_freqs_mhz'][j] for j, p in enumerate(params_list) if 'bw' in p])
+        bws_for_fit = np.array([p.get('bw') for p in params_list if 'bw' in p])
+        
+        fit_errs_list = [p.get('bw_err') for p in params_list if 'bw' in p]
+        fit_errs = np.array([err if err is not None else np.nan for err in fit_errs_list], dtype=float)
+        
+        finite_errs = np.array([p.get('finite_err') for p in params_list if 'bw' in p])
+        
         total_errs = np.sqrt(np.nan_to_num(fit_errs)**2 + np.nan_to_num(finite_errs)**2)
         
-        valid = ~np.isnan(bws) & ~np.isnan(total_errs) & (total_errs > 0)
+        valid = ~np.isnan(bws_for_fit) & ~np.isnan(total_errs) & (total_errs > 0)
         if np.sum(valid) < 2:
             log.warning(f"Skipping power-law fit for {name}: not enough valid data points.")
             continue
-            
-        powlaw_fit_result = Model(power_law_model).fit(bws[valid], x=freqs[valid], weights=1/total_errs[valid], c=1, n=4)
-        c, n = powlaw_fit_result.params['c'].value, powlaw_fit_result.params['n'].value
         
-        # Build sub-band mmeasurement dictionary
+        #try:
+        #    bws = np.array([p.get('bw') for p in params_list])
+        #    fit_errs = np.array([p.get('bw_err', np.nan) for p in params_list])
+        #    finite_errs = np.array([p.get('finite_err', np.nan) for p in params_list])
+
+        #    total_errs = np.sqrt(np.nan_to_num(fit_errs)**2 + np.nan_to_num(finite_errs)**2)
+
+        #    valid = ~np.isnan(bws) & ~np.isnan(total_errs) & (total_errs > 0)
+        #    
+        #    if np.sum(valid) < 2:
+        #        log.warning(f"Skipping power-law fit for {name}: not enough valid data points.")
+        #        continue
+        #
+        #except:
+        #    import uncertainties.unumpy as unp
+        #    bws       = unp.nominal_values(bws)        # strip uncertainties
+        #    fit_errs  = unp.nominal_values(fit_errs)
+        #    finite_errs = unp.nominal_values(finite_errs)
+
+        #    total_errs = np.sqrt(np.nan_to_num(fit_errs)**2 + np.nan_to_num(finite_errs)**2)
+
+        #    valid = ~np.isnan(bws) & ~np.isnan(total_errs) & (total_errs > 0)
+        #
+        #    if np.sum(valid) < 2:
+        #        log.warning(f"Skipping power-law fit for {name}: not enough valid data points.")
+        #        continue
+            
+        freqs_for_fit = np.array([acf_results['subband_center_freqs_mhz'][j] for j, p in enumerate(params_list) if 'bw' in p])
+        bws_for_fit = np.array([p.get('bw') for p in params_list if 'bw' in p])
+        
+        #powlaw_fit_result = Model(power_law_model).fit(bws_for_fit[valid], x=freqs_for_fit[valid], weights=1/total_errs[valid], c=1, n=4)
+        #c, n = powlaw_fit_result.params['c'].value, powlaw_fit_result.params['n'].value
+        
+        #try:
+        # Define power-law model: b = A * nu**alpha
+        def f(B, x):
+            return B[0] * x**B[1]
+
+        from scipy.odr import RealData, ODR
+        from scipy.odr import Model as ModelODR
+        model   = ModelODR(f)
+        data    = RealData(freqs_for_fit, bws_for_fit)
+        odr     = ODR(data, model, beta0=[1e-8, 4.0])   # initial guess [A, alpha]
+        out     = odr.run()
+
+        A_fit, alpha_fit = out.beta
+        print(f"α = {alpha_fit:.2f},  A = {A_fit:.3g},  residual variance = {out.res_var:.3f}")
+        A_err, alpha_err = out.sd_beta
+
+        cov = out.cov_beta * out.res_var       # full covariance matrix
+        ref = ref_freq                           # e.g. 1400.0 for 1400 MHz
+
+        # partial derivatives
+        dAdA   = ref**alpha_fit               # ∂b/∂A
+        dAda   = A_fit * (ref**alpha_fit)*np.log(ref)  # ∂b/∂α
+
+        # build gradient and compute variance
+        grad = np.array([dAdA, dAda])
+        var_b_ref = grad @ cov @ grad
+        b_ref     = A_fit * ref**alpha_fit
+        b_ref_err = np.sqrt(var_b_ref)
+
         subband_measurements = []
-        for j in np.where(valid)[0]: # Iterate only over valid indices
+        valid_indices = np.where(valid)[0]
+        for j in valid_indices:
             p = params_list[j]
             measurement = {
-                'freq_mhz': freqs[j],
-                'bw': p.get('bw'),
-                'mod': p.get('mod'),
-                'bw_err': p.get('bw_err'),
-                'finite_err': p.get('finite_err')
+                'freq_mhz': freqs[j], 'bw': p.get('bw'), 'mod': p.get('mod'),
+                'bw_err': p.get('bw_err'), 'finite_err': p.get('finite_err')
             }
             subband_measurements.append(measurement)
 
         final_results['components'][name] = {
-            'power_law_fit_report': powlaw_fit_result.fit_report(),
-            'scaling_index': n, 'scaling_index_err': powlaw_fit_result.params['n'].stderr,
-            'bw_at_ref_mhz': c * (ref_freq ** n),
-            'bw_at_ref_mhz_err': np.std(bws[valid] - powlaw_fit_result.eval(x=freqs[valid])),
+            'power_law_fit_report': [A_fit, alpha_fit],
+            'scaling_index': alpha_fit, 'scaling_index_err': alpha_err,
+            'bw_at_ref_mhz': A_fit*(ref_freq ** alpha_fit),
+            'bw_at_ref_mhz_err': b_ref_err,
             'subband_measurements': subband_measurements
         }
-        
-    return final_results, all_fits, powlaw_fit_result.params
+        return final_results, all_fits, out.beta  #, 
+            
+        #except:
+
+        #    return final_results, all_fits, None #, powlaw_fit_result.params

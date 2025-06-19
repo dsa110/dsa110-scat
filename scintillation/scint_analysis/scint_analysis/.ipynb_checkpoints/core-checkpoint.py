@@ -6,6 +6,7 @@ import logging
 from scipy.ndimage import label
 from scipy.stats import median_abs_deviation
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 # Set up a logger for this module
 log = logging.getLogger(__name__)
@@ -35,6 +36,12 @@ class DynamicSpectrum:
         self.frequencies = frequencies_mhz
         self.times = time_axis_s
         
+        # Immediately after you assign self.power, self.frequencies, self.times
+        #if self.frequencies[0] > self.frequencies[-1]:
+        #    self.frequencies = self.frequencies[::-1]
+        #    self.power       = self.power[::-1, :]         # flip channel axis
+
+        
         log.info(f"Spectrum shape: ({self.num_channels}, {self.num_timesteps})")
 
     @classmethod
@@ -47,7 +54,7 @@ class DynamicSpectrum:
         log.info(f"Loading DynamicSpectrum from file: {filepath}")
         try:
             with np.load(filepath) as data:
-                power = np.flip(data['power_2d'],axis=1)
+                power = np.flip(data['power_2d'], axis=0)
                 freqs = data['frequencies_mhz']
                 times = data['times_s']
                 return cls(power, freqs, times)
@@ -76,10 +83,19 @@ class DynamicSpectrum:
         return np.abs(np.mean(np.diff(self.times)))
         
     # --- Core Methods ---
-    def get_profile(self):
-        """Returns the 1D frequency-averaged time series."""
+    def get_profile(self, time_window_bins=None):
+        """
+        Returns the 1D frequency-averaged time series.
+        
+        Args:
+            time_window_bins (tuple): A tuple (start_bin, end_bin).
+        """
         log.debug("Calculating frequency-averaged profile.")
-        return np.ma.mean(self.power, axis=0)
+        if time_window_bins is not None:
+            start, end = time_window_bins
+            return np.ma.mean(self.power[:, start:end], axis=0)
+        else:
+            return np.ma.mean(self.power, axis=0)
         
     def get_spectrum(self, time_window_bins):
         """
@@ -132,31 +148,122 @@ class DynamicSpectrum:
     #    log.info(f"Burst envelope found between bins {final_lims[0]} and {final_lims[1]}.")
     #    return final_lims.tolist()
 
-    def find_burst_envelope(self, thres=5, downsample_factor=32):
-        log.info(f"Finding burst envelope with S/N threshold > {thres} (downsample ×{downsample_factor}).")
+    #def find_burst_envelope_old(self, thres=7, downsample_factor=16):
+    #log.info(f"Finding burst envelope with S/N threshold > {thres} (downsample ×{downsample_factor}).")
+    #
+    ## 1. Get and optionally downsample the profile
+    #prof = self.get_profile().filled(np.nan)  # make sure it’s a 1D ndarray
+    #
+    #fig = plt.figure()
+    #plt.plot(prof)
+    #plt.title('Full Res Timeseries')
+    #plt.show()
+    #print(f'Prof shape: {prof.shape}')
+    #
+    #if downsample_factor > 1:
+    #    n = prof.size - (prof.size % downsample_factor)
+    #    prof_ds = prof[:n].reshape(-1, downsample_factor).mean(axis=1)
+    #
+    #fig = plt.figure()
+    #plt.plot(prof_ds)
+    #plt.title('Low Res Timeseries')
+    #plt.show()
+    #print(f'Prof shape: {prof.shape}')
+    #
+    ## 2. Compute robust S/N
+    #med = np.nanmedian(prof_ds)
+    #std = np.nanstd(prof_ds)
+    #
+    #if std == 0 or np.isnan(std):
+    #    log.warning("Zero-variance (or NaN) profile; returning zeros.")
+    #    return [0, 0]
+    #
+    #snr = (prof_ds - med) / std
+    #
+    #fig = plt.figure()
+    #plt.plot(snr)
+    #plt.title('S/N Timeseries')
+    #plt.show()
+    #print(f'Prof shape: {prof.shape}')
+    #
+    #
+    ## 3. threshold & label in one shot
+    #mask = snr > thres
+    #if not mask.any():
+    #    log.warning("No burst envelope found above threshold.")
+    #    return [0, 0]
+    #
+    #
+    #print(f'Mask: {mask}')
+    #
+    #labels, nregions = label(mask)
+    #
+    ## 4. Compute “fluence” (sum of S/N) per region via bincount
+    ##    Note: bincount index 0 is background, so skip it
+    #weights = snr[mask]
+    #reg_ids = labels[mask]
+    #fluences = np.bincount(reg_ids, weights=weights)
+    #if fluences.size <= 1:
+    #    # Only background, should not happen since mask.any() is True
+    #    first_bin = np.argmax(mask)
+    #    last_bin = prof.size - np.argmax(mask[::-1]) - 1
+    #else:
+    #    peak_reg = np.argmax(fluences[1:]) + 1
+    #    idx = np.nonzero(labels == peak_reg)[0]
+    #    first_bin, last_bin = idx.min(), idx.max()
+    #
+    ## 5. Scale back to original resolution
+    #final_lims = [int(first_bin * downsample_factor),
+    #              int((last_bin + 1) * downsample_factor) - 1]
+    #
+    #
+    #fig = plt.figure()
+    #plt.plot(prof[final_lims[0]:final_lims[1]])
+    #plt.title('S/N Timeseries')
+    #plt.show()
+    #print(f'Prof shape: {prof.shape}')
+    #
+    #log.info(f"Burst envelope found between bins {final_lims[0]} and {final_lims[1]}.")
+    #return final_lims
 
-        # 1. Get and optionally downsample the profile
-        prof = self.get_profile().compressed()  # make sure it’s a 1D ndarray
+    
+    def find_burst_envelope(self, thres=5, downsample_factor=8):
+        """
+        Efficiently finds the full envelope of all signal above a threshold.
+        """
+        log.info(f"Efficiently finding burst envelope with S/N threshold > {thres} (downsample ×{downsample_factor}).")
+
+        prof = self.get_profile().compressed()
         if downsample_factor > 1:
             n = prof.size - (prof.size % downsample_factor)
             prof = prof[:n].reshape(-1, downsample_factor).mean(axis=1)
 
-        # 2. Compute robust S/N
-        med = np.median(prof)
-        std = np.std(prof)
+        med = np.nanmedian(prof[:5])
+        std = np.nanstd(prof[:5])
         if std == 0:
-            log.warning("Zero‐variance profile; returning zeros.")
+            log.warning("Zero-variance profile; returning empty envelope.")
             return [0, 0]
         snr = (prof - med) / std
 
-        # 3. threshold & label in one shot
         mask = snr > thres
         if not mask.any():
             log.warning("No burst envelope found above threshold.")
             return [0, 0]
 
+        # *** CORRECTED LOGIC: Find the full extent of ALL signal regions ***
+        #signal_indices = np.where(mask)[0]
+        #first_bin = signal_indices.min()
+        #last_bin = signal_indices.max()
+        #print(f'First/last bins DS: {first_bin, last_bin}')
+        mask = snr > thres
+        if not mask.any():
+            log.warning("No burst envelope found above threshold.")
+            return [0, 0]
+        
+        print(f'Mask: {mask}')
+        
         labels, nregions = label(mask)
-
+        
         # 4. Compute “fluence” (sum of S/N) per region via bincount
         #    Note: bincount index 0 is background, so skip it
         weights = snr[mask]
@@ -169,14 +276,27 @@ class DynamicSpectrum:
         else:
             peak_reg = np.argmax(fluences[1:]) + 1
             idx = np.nonzero(labels == peak_reg)[0]
+            print('idx: ', idx)
             first_bin, last_bin = idx.min(), idx.max()
 
-        # 5. Scale back to original resolution
         final_lims = [int(first_bin * downsample_factor),
-                      int((last_bin + 1) * downsample_factor) - 1]
+                      int((last_bin+1) * downsample_factor) - 1]
+        
+        fig = plt.figure()
+        plt.plot(snr)
+        plt.title('S/N')
+        plt.show()
+        
+        fig = plt.figure()
+        fullprof = self.get_profile().compressed()
+        plt.plot(fullprof[final_lims[0]:final_lims[1]])
+        plt.title('Prof')
+        plt.show()
+        print(f'Prof shape: {prof.shape}')
+        print(f'Peak S/N: {np.nanmax(snr)}')   
+        
         log.info(f"Burst envelope found between bins {final_lims[0]} and {final_lims[1]}.")
         return final_lims
-
 
     def mask_rfi(self, config):
         """
@@ -256,12 +376,23 @@ class DynamicSpectrum:
             time_mask = np.zeros(self.num_timesteps, dtype=bool)
 
         # Combine masks and create new object
-        final_mask = (self.power.mask
-              | channel_mask[:, np.newaxis]
-              | time_mask[np.newaxis, :])
-        new_power = np.ma.masked_array(self.power.data, mask=final_mask)
         
-        return DynamicSpectrum(new_power, self.frequencies, self.times)
+        # 1. Promote existing mask (if any) to full Boolean array
+        if self.power.mask is np.ma.nomask or np.isscalar(self.power.mask):
+            base_mask = np.zeros_like(self.power.data, dtype=bool)
+        else:
+            base_mask = self.power.mask.copy()          # keeps dtype=bool
+
+        # 2. Broadcast new masks to (n_chan, n_time)
+        chan_mask_full = np.broadcast_to(channel_mask[:, None], self.power.shape)
+        time_mask_full = np.broadcast_to(time_mask[None, :], self.power.shape)
+
+        # 3. Combine
+        final_mask = base_mask | chan_mask_full | time_mask_full
+
+        # 4. Build a *new* DynamicSpectrum so callers get a fresh object
+        new_power = np.ma.MaskedArray(self.power.data.copy(), mask=final_mask)
+        return DynamicSpectrum(new_power, self.frequencies.copy(), self.times.copy())
     
     def __repr__(self):
         return (f"<DynamicSpectrum ({self.num_channels} channels x {self.num_timesteps} timesteps, "
