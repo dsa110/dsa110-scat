@@ -1,10 +1,8 @@
-# Scattering and scintillation analysis scripts for the DSA-110
+# FRB Intensity Analysis Pipeline for the DSA-110
 
-## Scattering Pipeline
+## Pulse-broadening
 
-# Burst‑Fit Pipeline
-
-A lightweight, modular toolkit for fitting pulse-broadening and scintillation in Fast Radio Burst (FRB) dynamic spectra, and instrumental effects. 
+A lightweight, modular, telescope-agnostic toolkit for fitting pulse-broadening and scintillation in Fast Radio Burst (FRB) dynamic spectra, and instrumental effects. 
 
 ---
 
@@ -12,10 +10,13 @@ A lightweight, modular toolkit for fitting pulse-broadening and scintillation in
 
 ```
 scattering/
-├── burstfittools.py              # core physics + MCMC wrappers
-├── burstfit_casey_analysis.py  # example end‑to‑end script (CLI)
-├── burstfit_modelselect.py     # sequential M0 → M1 → M2 → M3 model comparison
-└── burstfit_robust.py          # sub‑band & per-channel leave‑one‑out diagnostics                  
+├── burstfit_pipeline.py        # OO pipeline orchestrator
+├── burstfit.py                 # core physics + MCMC wrappers
+├── burstfit_utils.py           # helper functions MCMC fit
+├── burstfit_modelselect.py     # sequential M0 → M1 → M2 → M3 model comparison + selection
+├── burstfit_robust.py          # sub‑band & per-channel leave‑one‑out diagnostics + others
+├── config_utils.py             # reads telescope-specific raw-data parameters (in .yaml)
+└── pool_utils.py               # handles multi-processing (if applicable)
 ```
 
 ---
@@ -43,8 +44,9 @@ file  ───────▶ │ pre‑processing   │──┐
 
 ## One‑liner quick start
 
-```bash
-# fit a burst with 384×2 down‑sampling and run model selection
+```
+bash
+# fit a burst with down‑sampling (e.g., 384×2) and run model selection
 python burstfit_casey_analysis.py casey.npy \
        --downsample-f 384 --downsample-t 2 \
        --model-scan --plot
@@ -64,7 +66,7 @@ python burstfit_casey_analysis.py casey.npy \
 
 | Module                       | Responsibility                      | Public API                                             |
 | ---------------------------- | ----------------------------------- | ------------------------------------------------------ |
-| `burstfit_v2.py`             | Physics kernel & sampler            | `FRBModel`, `FRBFitter`, `FRBParams`, `build_priors()` |
+| `burstfit.py`                | Physics kernel & sampler            | `FRBModel`, `FRBFitter`, `FRBParams`, `build_priors()` |
 | `burstfit_casey_analysis.py` | Command‑line “notebook replacement” | `prep_dynamic()`, CLI main                             |
 | `burstfit_modelselect.py`    | Sequential fits + BIC               | `fit_models_bic()`                                     |
 | `burstfit_robust.py`         | Robustness diagnostics              | `subband_consistency()`, `leave_one_out_influence()`   |
@@ -79,36 +81,18 @@ python burstfit_casey_analysis.py casey.npy \
 
 ---
 
+## Scintillation Pipeline
+
+To be added.
+
+---
+
 ## Citing & license
 
 Please cite **Faber et al., *in prep.* (2025)** if you use this code.
 
+---
 
 
-## Scintillation Pipeline
-
-scintillation/
-│
-├── data/
-│   └── burst_power.npz         # Input data file
-│
-├── scint_analysis/
-│   ├── configs/
-│   │   ├── telescopes/
-│   │   │   └── dsa.yaml        # Telescope-specific config file
-│   │   └── bursts/
-│   │       └── burst.yaml      # Burst-specific config
-│   │
-│   ├── scint_analysis/         # Pipeline source code
-│   │   ├── __init__.py
-│   │   ├── core.py
-│   │   ├── analysis.py
-│   │   ├── config.py
-│   │   ├── pipeline.py
-│   │   └── plotting.py
-│   │
-│   └── run_analysis.py         # The script you will execute
-│
-└── cache/                      # Cache to preserve intermediate data products
 
 These scripts contain helper functions that facilitate the analysis of burst properties within the PARSEC dashboard (see dsa110-pol repository).
